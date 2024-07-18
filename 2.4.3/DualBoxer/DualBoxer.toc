@@ -1,6 +1,6 @@
 ## Interface: 20400
 ## Title: DualBoxer
-## Version: 1.0
+## Version: 1.0.1
 ## Author: Velcrogloves
 ## Notes: A dualboxing addon.
 ## SavedVariables: DualBoxerDB
