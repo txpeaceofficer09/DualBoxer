@@ -151,6 +151,12 @@ local function DualBoxerXP_Refresh()
 			index = index + 1
 		end
 	end
+
+	if ( numBars > #(DualBoxerDB.data) ) then
+		for i=#(DualBoxerDB.data),numBars,1 do
+			_G["DualBoxerXPFrameBar"..i]:Hide()
+		end
+	end
 end
 
 local function AddUnit(name, class, curXP, maxXP, lvl)
