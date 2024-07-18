@@ -1,3 +1,9 @@
+local DUALBOXER_VERSION = {
+	["maj"] = 1,
+	["min"] = 0,
+	["rev"] = 1,
+}
+
 DualBoxerDB = {
 	["pos_a"] = "CENTER",
 	["pos_c"] = "CENTER",
@@ -14,6 +20,24 @@ local Settings = {
 	["border"] = "Interface\\Tooltips\\UI-Tooltip-Border",
 	["refresh_rate"] = 2,
 }
+
+local MAX_LEVEL = 0
+
+if WOW_PROJECT_ID == 1 then
+	MAX_LEVEL = 60
+elseif WOW_PROJECT_ID == 2 then
+	MAX_LEVEL = 70
+elseif WOW_PROJECT_ID == 3 then
+	MAX_LEVEL = 80
+elseif WOW_PROJECT_ID == 4 then
+	MAX_LEVEL = 85
+elseif WOW_PROJECT_ID == 5 then
+	MAX_LEVEL = 90
+end
+
+local function ucfirst(str)
+	return string.upper(string.sub(str, 1, 1))..string.lower(string.sub(str, 2))
+end
 
 local function ShortNumber(number)
 	if number >= 1000000000 then
@@ -70,6 +94,14 @@ local function IsInParty(name)
 	end
 
 	return false
+end
+
+local function PruneTable()
+	for k,v in ipairs(DualBoxerDB.data) do
+		if not IsInParty(v["name"]) and v["name"] ~= UnitName("player") then
+			table.remove(DualBoxerDB.data, k)
+		end
+	end
 end
 
 local function WhoIsMaster()
@@ -298,6 +330,8 @@ f:SetScript("OnEvent", function(self, event, ...)
 
 		SendAddOnMessage("REFRESH")
 
+		PruneTable()
+
 		DualBoxerXP_Refresh()
 	elseif ( event == "CHAT_MSG_PARTY" or event == "CHAT_MSG_PARTY_LEADER" or event == "CHAT_MSG_RAID" or event == "CHAT_MSG_RAID_LEADER" ) then
 		local msg, name = ...
@@ -325,10 +359,30 @@ f:SetScript("OnEvent", function(self, event, ...)
 
 		if ( cmd == "inv" or cmd == "invite" ) then
 			if ( target == "me" or target == "" or target == nil ) then
-				target = name
+				target = ucfirst(name)
 			end
 
-			InviteUnit(target)
+			if ( GetNumRaidMembers() > 0 ) then
+				if ( IsRaidLeader() ) then
+					InviteUnit(target)
+				else
+					SendChatMessage(ucfirst(name).." requested a raid invite.", "RAID", nil, nil)
+					SendChatMessage("I am not the raid leader.", "WHISPER", nil, ucfirst(name))
+				end
+			elseif ( GetNumPartyMembers() > 0 ) then
+				if ( IsPartyLeader() ) then
+					InviteUnit(target)
+				else
+					for i=1,GetNumPartyMembers(),1 do
+						if ( UnitIsPartyLeader("party"..i) ) then
+							SendChatMessage(ucfirst(name).." requested a party invite.", "PARTY", nil, nil)
+							SendChatMessage(UnitName("party"..i).." is the party leader.", "WHISPER", nil, ucfirst(name))
+						end
+					end
+				end
+			else
+				InviteUnit(target)
+			end
 		elseif ( cmd == "follow" or cmd == "f" ) then
 			if ( target == "me" or target == "" or target == nil ) then
 				target = name
@@ -342,11 +396,17 @@ f:SetScript("OnEvent", function(self, event, ...)
 			end
 			PromoteToLeader(target)
 			SendGroupMessage("Promoted "..target.." to leader.")
+		elseif ( cmd == "master" ) then
+			local name = target
+			DualBoxerDB.master = ucfirst(name)
 		else
 			--print(GetPlayerInfoByGUID(guid))
-			local master = WhoIsMaster()
-			if ( master ~= nil ) then
-				SendChatMessage(("[%s]: %s"):format(name, msg), "WHISPER", nil, master)
+			--local master = WhoIsMaster()
+			--if ( master ~= nil ) then
+			if ( DualBoxerDB.master ~= nil ) then
+				SendChatMessage(("[%s]: %s"):format(name, msg), "WHISPER", nil, DualBoxerDB.master)
+			else
+				print("DualBoxer: no master set.")
 			end
 		end
 	elseif ( event == "PLAYER_LEVEL_UP" ) then
@@ -358,7 +418,7 @@ f:SetScript("OnEvent", function(self, event, ...)
 	elseif ( event == "CHAT_MSG_CHANNEL" ) then
 		local msg, name, _, _, _, _, _, _, chan = ...		
 
-		if ( chan == "DualBoxer" ) then
+		if ( chan == "DualBoxer" and IsInParty(name) ) then
 			local type, args = string.split(":", msg, 2)
 
 			if ( type == "XP" ) then
@@ -369,13 +429,34 @@ f:SetScript("OnEvent", function(self, event, ...)
 				--DualBoxerDB.data[name].curXP = curXP
 				--DualBoxerDB.data[name].maxXP = maxXP
 				--DualBoxerDB.data[name].lvl = lvl
+			elseif ( type == "MASTER" ) then
+				if ( IsInParty(args) ) then
+					DualBoxerDB.master = ucfirst(args)
+				end
+			elseif ( type == "VERSION" ) then
+				local maj, min, rev = string.split(".", args)
+
+				if ( maj >= DUALBOXER_VERSION.maj and min >= DUALBOXER_VERSION.min and rev > DUALBOXER_VERSION.rev ) then
+					print(("DualBoxer: newer version available. Yours: %d.%d.%d New: %d.%d.%d (https://www.github.com/txpeaceofficer09/DualBoxer/)"):format(DUALBOXER_VERSION.maj, DUALBOXER_VERSION.min, DUALBOXER_VERSION.rev, maj, min, rev))
+				end
 			elseif ( type == "REFRESH" ) then
 				SendAddOnMessage(("XP:%s:%s:%s:%s:%s"):format(UnitName("player"), UnitClass("player"), UnitXP("player"), UnitXPMax("player"), UnitLevel("player")))				
 			end
 		end
+	elseif ( event == "AUTOFOLLOW_BEGIN" ) then
+		--SendGroupMessage("I have started autofollow.")
+	elseif ( event == "AUTOFOLLOW_END" ) then
+		--SendGroupMessage("I have stopped autofollow.")
 	elseif ( event == "RAID_ROSTER_UPDATE" or event == "PARTY_MEMBERS_CHANGED" ) then
 		DualBoxerXP_Refresh()
 		SendAddOnMessage("REFRESH")
+		PruneTable()
+
+		if ( GetNumPartyMembers() == 0 and GetNumRaidMembers() == 0 ) then
+			DualBoxerXPFrame:Hide()
+		else
+			DualBoxerXPFrame:Show()
+		end
 	end
 end)
 
@@ -391,3 +472,46 @@ f:RegisterEvent("PLAYER_XP_UPDATE")
 f:RegisterEvent("PLAYER_LEVEL_UP")
 f:RegisterEvent("RAID_ROSTER_UPDATE")
 f:RegisterEvent("PARTY_MEMBERS_CHANGED")
+f:RegisterEvent("AUTOFOLLOW_BEGIN")
+f:RegisterEvent("AUTOFOLLOW_END")
+
+local function SlashCmd(...)
+	local cmd, params = string.split(" ", string.lower(...), 2)
+
+	if ( cmd == "master" ) then
+		local name, target = string.split(" ", params, 2)
+
+		if ( name == nil or name == "" or name == "me" ) then
+			name = UnitName("player")
+		end
+
+		if ( target == "all" ) then
+			SendAddOnMessage("MASTER:"..name)
+		end
+
+		--[[
+		if ( GetNumPartyMembers() > 0 ) then
+			for i=1,GetNumPartyMembers(),1 do
+				SendChatMessage("master "..name, "WHISPER", nil, UnitName("party"..i)
+			end
+		end
+		]]
+		DualBoxerDB.master = ucfirst(name)
+		print("DualBoxer: master set to "..DualBoxerDB.master)
+	end
+
+        if ... == "off" then
+                f:UnregisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+                PrintMsg("off")
+        elseif ... == "on" then
+                f:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+                PrintMsg("on")
+        else
+                --AnnouncerConfig:OpenConfig()
+        end
+end
+
+SLASH_DUALBOXER1 = "/db"
+SLASH_DUALBOXER2 = "/dual"
+SLASH_DUALBOXER3 = "/dualboxer"
+SlashCmdList["DUALBOXER"] = SlashCmd
